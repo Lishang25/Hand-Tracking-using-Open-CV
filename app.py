@@ -1,46 +1,60 @@
-import cv2
-import mediapipe as mp
-import time
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+from flask import Flask, render_template, request
 
-cap = cv2.VideoCapture(0)
+app = Flask(__name__)
 
-mphands = mp.solutions.hands
-hands = mphands.Hands(False)
-mpDraw = mp.solutions.drawing_utils
+# Load environment variables
+load_dotenv()
 
-pTime=0
-cTime=0
+# Configure Gemini API
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+# Function to get Gemini response
+def get_gemini_response(question):
+    model = genai.GenerativeModel('gemini-pro')
+    response = model.generate_content(question)
+    return response.text
 
 
-while True:
-    success, img = cap.read()
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        try:
+            user_input = request.form['user_input']
+        except KeyError:
+            user_input = ""
 
-    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    results = hands.process(imgRGB)
+        prompt = f"""Imagine you are a medical expert and you are giving accurate medical advice to a patient. 
+        You are presented with a medical query and asked to provide a response with a detailed explanation. 
+        Note that dont mention any inaccurate or misleading information.
 
-    if results.multi_hand_landmarks:
-        for handLms in results.multi_hand_landmarks:
-            # below code is for drawing the landmarks on the hand
-            for id, lm in enumerate(handLms.landmark):
-                h,w,c = img.shape
-                cx,cy = int(lm.x*w), int(lm.y*h)
-                print(id, cx, cy)
-                if id == 0:
-                    cv2.circle(img, (cx,cy), 10, (255,0,255), cv2.FILLED)
+        Medical Query: {user_input}
 
-            mpDraw.draw_landmarks(img, handLms, mphands.HAND_CONNECTIONS)
-        
-    
-    cTime = time.time()
-    fps = 1/(cTime-pTime)
-    pTime = cTime
+        Key Details:
+        - Provide precise information related to the patient's medical concern.
+        - Indicate if any diagnostic tests or examinations have been performed.
+        - Specify the current medications or treatments prescribed.
+        - The response should be in a paragraph format but not in point-wise.
+        - If only a specific disease name is mentioned, response must contain the symptoms, causes, and treatment of the disease with respective headings.
 
-    cv2.putText(img,str(int(fps)),(10,70),cv2.FONT_HERSHEY_PLAIN,3,(255,0,255),3)
+        Guidelines:
+        - Use clear and concise language.
+        - The vocabulary should be appropriate for the medical context.
+        - Include specific parameters or considerations within the medical context.
+        - If the response contains a list of items, convert it into a paragraph format.
+        - Avoid using abbreviations or acronyms.
+        - Avoid Headings and Sub hheadings just give me the complete response in a paragraph format.
+        - Refrain from presenting inaccurate or ambiguous information.
+        - Ensure the query is focused and not overly broad."""
 
-    cv2.imshow("Image", img)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-    
-# Release the webcam and close the window
-cap.release()
-cv2.destroyAllWindows()
+        # Get Gemini response
+        gemini_response = get_gemini_response(prompt)
+
+        return render_template('index.html', user_input=user_input, response=gemini_response)
+
+    return render_template('index.html')
+
+if __name__ == '__main__':
+    app.run(debug=True)
